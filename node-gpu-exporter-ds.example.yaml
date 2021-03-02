@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-gpu-exporter
+  namespace: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: node-gpu-exporter
+  template:
+    metadata:
+      labels:
+        app: node-gpu-exporter
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: primehub.io/accelerator
+                    operator: Exists
+      hostNetwork: true
+      hostPID: true
+      containers:
+        - name: node-gpu-exporter
+          image: infuseai/nvidia_gpu_prometheus_exporter:0.1
+          securityContext:
+            privileged: true
+          env:
+            - name: LD_LIBRARY_PATH
+              value: /usr/local/nvidia/lib:/usr/local/nvidia/lib64
+          volumeMounts:
+            - mountPath: /usr/local/nvidia
+              name: nvidia
+              readOnly: true
+            - name: pod-resources
+              readOnly: true
+              mountPath: /var/lib/kubelet/pod-resources
+          ports:
+            - containerPort: 9445
+              hostPort: 9445
+          resources:
+            limits:
+              memory: 50Mi
+              cpu: 200m
+            requests:
+              memory: 30Mi
+              cpu: 100m
+      volumes:
+        - hostPath:
+            path: /usr/local/nvidia
+            type: ""
+          name: nvidia
+        - name: pod-resources
+          hostPath:
+            path: /var/lib/kubelet/pod-resources
+      tolerations:
+        - effect: NoSchedule
+          operator: Exists
+          key: nvidia.com/gpu
+        - effect: NoSchedule
+          operator: Exists
+          key: hub.jupyter.org/dedicated

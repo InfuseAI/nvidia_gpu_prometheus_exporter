@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"github.com/qrtt1/nvidia_gpu_prometheus_exporter/internal/kubelet"
 	"log"
 	"net/http"
 	"strconv"
@@ -13,13 +14,14 @@ import (
 )
 
 const (
-	namespace = "nvidia_gpu"
+	namespace        = "nvidia_gpu"
+	podResourcesSock = "/var/lib/kubelet/pod-resources/kubelet.sock"
 )
 
 var (
 	addr = flag.String("web.listen-address", ":9445", "Address to listen on for web interface and telemetry.")
 
-	labels = []string{"minor_number", "uuid", "name"}
+	labels = []string{"minor_number", "uuid", "name", "device", "used_by"}
 )
 
 type Collector struct {
@@ -103,6 +105,29 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 	c.fanSpeed.Describe(ch)
 }
 
+func (c *Collector) GetGPUAllocation() (map[string]string, error) {
+	resp, err := kubelet.GetListOfPods(podResourcesSock)
+	m := make(map[string]string)
+	if err != nil {
+		return m, err
+	}
+	if err == nil {
+		resources := resp.PodResources
+		for _, podResource := range resources {
+			for _, container := range podResource.Containers {
+				if len(container.Devices) > 0 {
+					for _, device := range container.Devices {
+						for _, id := range device.DeviceIds {
+							m[id] = podResource.Name
+						}
+					}
+				}
+			}
+		}
+	}
+	return m, nil
+}
+
 func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	// Only one Collect call in progress at a time.
 	c.Lock()
@@ -124,8 +149,16 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 		ch <- c.numDevices
 	}
 
+	allocation, _ := c.GetGPUAllocation()
 	for i := 0; i < int(numDevices); i++ {
 		dev, err := gonvml.DeviceHandleByIndex(uint(i))
+		device := "nvidia" + strconv.Itoa(i)
+		usedBy := "-"
+
+		if owner, found := allocation[device]; found {
+			usedBy = owner
+		}
+
 		if err != nil {
 			log.Printf("DeviceHandleByIndex(%d) error: %v", i, err)
 			continue
@@ -154,36 +187,36 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 		if err != nil {
 			log.Printf("MemoryInfo() error: %v", err)
 		} else {
-			c.usedMemory.WithLabelValues(minor, uuid, name).Set(float64(usedMemory))
-			c.totalMemory.WithLabelValues(minor, uuid, name).Set(float64(totalMemory))
+			c.usedMemory.WithLabelValues(minor, uuid, name, device, usedBy).Set(float64(usedMemory))
+			c.totalMemory.WithLabelValues(minor, uuid, name, device, usedBy).Set(float64(totalMemory))
 		}
 
 		dutyCycle, _, err := dev.UtilizationRates()
 		if err != nil {
 			log.Printf("UtilizationRates() error: %v", err)
 		} else {
-			c.dutyCycle.WithLabelValues(minor, uuid, name).Set(float64(dutyCycle))
+			c.dutyCycle.WithLabelValues(minor, uuid, name, device, usedBy).Set(float64(dutyCycle))
 		}
 
 		powerUsage, err := dev.PowerUsage()
 		if err != nil {
 			log.Printf("PowerUsage() error: %v", err)
 		} else {
-			c.powerUsage.WithLabelValues(minor, uuid, name).Set(float64(powerUsage))
+			c.powerUsage.WithLabelValues(minor, uuid, name, device, usedBy).Set(float64(powerUsage))
 		}
 
 		temperature, err := dev.Temperature()
 		if err != nil {
 			log.Printf("Temperature() error: %v", err)
 		} else {
-			c.temperature.WithLabelValues(minor, uuid, name).Set(float64(temperature))
+			c.temperature.WithLabelValues(minor, uuid, name, device, usedBy).Set(float64(temperature))
 		}
 
 		fanSpeed, err := dev.FanSpeed()
 		if err != nil {
 			log.Printf("FanSpeed() error: %v", err)
 		} else {
-			c.fanSpeed.WithLabelValues(minor, uuid, name).Set(float64(fanSpeed))
+			c.fanSpeed.WithLabelValues(minor, uuid, name, device, usedBy).Set(float64(fanSpeed))
 		}
 	}
 	c.usedMemory.Collect(ch)
