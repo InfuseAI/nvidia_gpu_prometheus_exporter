@@ -1,4 +1,4 @@
-module github.com/qrtt1/nvidia_gpu_prometheus_exporter
+module nvidia_gpu_prometheus_exporter
 
 go 1.15
 

@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	"github.com/qrtt1/nvidia_gpu_prometheus_exporter/internal/kubelet"
+	"nvidia_gpu_prometheus_exporter/internal/kubelet"
 	"log"
 	"net/http"
 	"strconv"

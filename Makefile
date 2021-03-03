@@ -1,7 +1,7 @@
 PKG=github.com/InfuseAI/nvidia_gpu_prometheus_exporter
 REGISTRY=infuseai
 IMAGE=nvidia_gpu_prometheus_exporter
-TAG=0.3
+TAG=0.4
 
 build:
 	docker build --pull -t ${REGISTRY}/${IMAGE}:${TAG} .
